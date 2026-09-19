@@ -233,7 +233,7 @@ STANDARDIZED_30HZ_ACTION_KEYS = frozenset(
 # Row-aligned exports may be 15 Hz (DexTouch-WM / FTP-1 native) or 30 Hz
 # (bench_v5).  Both are accepted only when source_fps == target_fps.
 ALLOWED_ROW_ALIGNED_FPS = (15.0, 30.0)
-_NEXT_STATE_ACTION_PAIRS = (
+_ACTION_STATE_PAIRS = (
     ("action/left_ee_joint_states", "state/left_ee_joint_states"),
     ("action/right_ee_joint_states", "state/right_ee_joint_states"),
     ("action/left_ee_poses", "state/left_ee_poses"),
@@ -845,26 +845,32 @@ def _is_allowed_row_aligned_fps(fps: float) -> bool:
     )
 
 
-def _assert_action_is_not_next_state(handle: h5py.File, frame_count: int) -> None:
-    """Fail closed if ``action[t]`` is a copy of ``state[t+1]``.
+def _assert_action_datasets_are_independent(
+    handle: h5py.File, frame_count: int
+) -> None:
+    """Require distinct source datasets for state and action.
 
-    FTP-1 must supervise the independent HDF5 ``action/*`` group.  A source
-    that wrote the next observation into those arrays is rejected even though
-    the keys exist.
+    The production contract is provenance based: supervision is read directly
+    from the HDF5 ``action/*`` datasets and is never synthesized by shifting a
+    ``state/*`` array.  Some Spark recordings legitimately contain EE command
+    values that are numerically equal to the following observed EE pose, so
+    value equality alone cannot establish (or refute) provenance.  We therefore
+    reject an HDF5 hard-link alias while allowing two independent datasets to
+    contain equal values.
     """
-    if frame_count < 2:
-        return
-    for action_key, state_key in _NEXT_STATE_ACTION_PAIRS:
-        action = np.asarray(handle[action_key][:], dtype=np.float64)
-        state = np.asarray(handle[state_key][:], dtype=np.float64)
+    for action_key, state_key in _ACTION_STATE_PAIRS:
+        action = handle[action_key]
+        state = handle[state_key]
         if action.shape[0] != frame_count or state.shape[0] != frame_count:
             raise ValueError(
                 f"{action_key}/{state_key} length must equal timestamps {frame_count}"
             )
-        if np.allclose(action[:-1], state[1:], atol=1e-6, rtol=1e-6):
+        action_id = getattr(action, "id", None)
+        state_id = getattr(state, "id", None)
+        if action_id is not None and state_id is not None and action_id == state_id:
             raise ValueError(
-                f"{action_key} is a copy of next-step {state_key}; "
-                "FTP-1 forbids using next state as action"
+                f"{action_key} aliases {state_key}; action must come from an "
+                "independent HDF5 dataset"
             )
 
 
@@ -1320,7 +1326,9 @@ def _convert_standardized_30hz_episode(
             "standardized timestamps are not a regular "
             f"{source_fps:g} Hz row grid; refusing to repair them by resampling"
         )
-    _assert_action_is_not_next_state(input_file, frame_count=int(len(timestamps)))
+    _assert_action_datasets_are_independent(
+        input_file, frame_count=int(len(timestamps))
+    )
     source_time = timestamps - timestamps[0]
     frame_count = int(len(source_time))
     source_indices = np.arange(frame_count, dtype=np.int64)

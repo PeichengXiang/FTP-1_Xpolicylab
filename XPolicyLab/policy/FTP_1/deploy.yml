@@ -23,6 +23,7 @@ test_action_horizon: 33
 image_size:
 - 224
 - 224
+input_color_order: RGB
 camera_map:
   camera_ego_rgb_0:
   - cam_head

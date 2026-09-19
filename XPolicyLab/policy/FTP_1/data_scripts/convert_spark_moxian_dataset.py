@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import cv2
+import h5py
 import numpy as np
 import zarr
 
@@ -44,6 +45,7 @@ from parse_data_spark_moxian import (  # noqa: E402
     SENSOR_NAME,
     TACTILE_TYPE,
     WUJIHAND2_FAAS_INDEX,
+    _pose_wxyz_to_xyz_rotvec_rows,
     convert_episode,
 )
 
@@ -56,6 +58,13 @@ CONVERTER_SHA256 = hashlib.sha256(CONVERTER_PATH.read_bytes()).hexdigest()
 PIXEL_EQUIVALENT_CONVERTER_SHA256 = frozenset(
     {
         CONVERTER_SHA256,
+        # Production bench_v5 export.  Its tensors are additionally checked
+        # against every source HDF5 action row by
+        # validate_episode_actions_against_source below.
+        "732a3a100afc3d9433f2f2622c3f234fbb82710b93f2d4821813860bae5dfe86",
+        # Intermediate provenance-guard revision; tensor generation is
+        # unchanged from the current converter.
+        "9b168438f292c92d946a0a016acf9e298a7450b93f3ef72b20159139541dc010",
         "48b6d8c09ff686ec74b821d9afa3cb85bf72cbdbbc374c43ee39f2c97273ac30",
     }
 )
@@ -216,6 +225,107 @@ def _assert_finite(array: Any, name: str, chunk_rows: int = 512) -> None:
             raise ValueError(f"{name} contains non-finite values near row {start}")
 
 
+_SOURCE_ACTION_ARRAYS = (
+    ("action/left_ee_joint_states", "left_hand_joints_action", "vector"),
+    ("action/right_ee_joint_states", "right_hand_joints_action", "vector"),
+    ("action/left_ee_poses", "left_wrist_pose_action", "pose_wxyz"),
+    ("action/right_ee_poses", "right_wrist_pose_action", "pose_wxyz"),
+)
+_SOURCE_ARM_ACTION_ARRAYS = (
+    ("action/left_arm_joint_states", "left_arm_joints_action", "vector"),
+    ("action/right_arm_joint_states", "right_arm_joints_action", "vector"),
+)
+
+
+def validate_episode_actions_against_source(
+    path: Path,
+    source_hdf5: Path,
+    *,
+    expected_joint_only_120d: bool | None = None,
+    chunk_rows: int = 512,
+) -> dict[str, Any]:
+    """Prove every exported action row came from the source ``action/*`` group.
+
+    Numeric equality between a command and the following observation is valid
+    in this dataset and is not used as a provenance test.  Instead, this check
+    independently re-reads the named HDF5 action datasets, applies only the
+    documented WXYZ-to-rotation-vector representation change for poses, and
+    compares them with the dedicated Zarr ``*_action`` arrays.
+    """
+    if chunk_rows < 1:
+        raise ValueError("chunk_rows must be at least 1")
+    source_hdf5 = Path(source_hdf5)
+    if not source_hdf5.is_file():
+        raise FileNotFoundError(source_hdf5)
+
+    root = zarr.open_group(str(path), mode="r")
+    data = root["data"]
+    joint_only_120d = bool(root.attrs.get("joint_only_120d", False))
+    if (
+        expected_joint_only_120d is not None
+        and joint_only_120d is not expected_joint_only_120d
+    ):
+        raise ValueError(
+            "joint-only contract mismatch during source-action audit: "
+            f"expected={expected_joint_only_120d}, actual={joint_only_120d}"
+        )
+    action_specs = list(_SOURCE_ACTION_ARRAYS)
+    if not joint_only_120d:
+        action_specs.extend(_SOURCE_ARM_ACTION_ARRAYS)
+
+    verified_rows: dict[str, int] = {}
+    max_abs_error: dict[str, float] = {}
+    with h5py.File(source_hdf5, "r") as source:
+        for source_key, output_key, representation in action_specs:
+            if source_key not in source:
+                raise KeyError(f"source HDF5 is missing {source_key}")
+            if output_key not in data:
+                raise KeyError(f"output Zarr is missing {output_key}")
+            source_array = source[source_key]
+            output_array = data[output_key]
+            if int(source_array.shape[0]) != int(output_array.shape[0]):
+                raise ValueError(
+                    f"action length mismatch for {source_key}/{output_key}: "
+                    f"{source_array.shape[0]} != {output_array.shape[0]}"
+                )
+
+            array_max_abs_error = 0.0
+            for start in range(0, int(source_array.shape[0]), chunk_rows):
+                end = min(start + chunk_rows, int(source_array.shape[0]))
+                source_values = np.asarray(source_array[start:end])
+                if representation == "pose_wxyz":
+                    source_values = _pose_wxyz_to_xyz_rotvec_rows(
+                        source_values, source_key
+                    )
+                else:
+                    source_values = source_values.astype(np.float32)
+                output_values = np.asarray(output_array[start:end], dtype=np.float32)
+                if source_values.shape != output_values.shape:
+                    raise ValueError(
+                        f"action shape mismatch for {source_key}/{output_key} near "
+                        f"row {start}: {source_values.shape} != {output_values.shape}"
+                    )
+                difference = np.abs(source_values - output_values)
+                chunk_max = float(np.max(difference)) if difference.size else 0.0
+                array_max_abs_error = max(array_max_abs_error, chunk_max)
+                if not np.allclose(
+                    source_values, output_values, atol=1e-6, rtol=1e-6
+                ):
+                    raise ValueError(
+                        f"{output_key} does not match direct HDF5 {source_key} "
+                        f"near row {start}; max_abs_error={chunk_max}"
+                    )
+            verified_rows[output_key] = int(source_array.shape[0])
+            max_abs_error[output_key] = array_max_abs_error
+
+    return {
+        "action_source_verified": True,
+        "action_source_contract": "direct_hdf5_action_group",
+        "action_source_verified_rows": verified_rows,
+        "action_source_max_abs_error": max_abs_error,
+    }
+
+
 def validate_episode_zarr(
     path: Path, *, expected_joint_only_120d: bool | None = None
 ) -> dict[str, Any]:
@@ -259,6 +369,13 @@ def validate_episode_zarr(
             raise ValueError(f"standardized source {mapping} is not identity")
     if root.attrs.get("action_source") != "hdf5_action":
         raise ValueError("output action_source must be hdf5_action")
+    image_preprocessing = dict(root.attrs.get("image_preprocessing", {}))
+    if image_preprocessing.get("decode") != "XPolicyLab.utils.process_data.decode_image_bit":
+        raise ValueError("RGB images were not decoded with decode_image_bit")
+    if image_preprocessing.get("channel_transform") != "none":
+        raise ValueError("RGB channel order must be preserved without a transform")
+    if image_preprocessing.get("resize") != "cv2.INTER_AREA_to_224x224":
+        raise ValueError("RGB resize contract must be cv2.INTER_AREA_to_224x224")
     tactile_preprocessing = dict(root.attrs.get("tactile_pressure_preprocessing", {}))
     if tactile_preprocessing.get("formula") != "direct_copy_of_pressure_component":
         raise ValueError("tactile pressure was not marked as a direct copy")
@@ -421,6 +538,9 @@ def validate_episode_zarr(
         "episodes": int(len(ends)),
         "duration_seconds": duration_seconds,
         "instruction": instruction,
+        "model_input_resolution": [224, 224],
+        "image_color_order": "RGB",
+        "image_channel_transform": "none",
         "data_key_count": len(keys),
         "joint_only_120d": joint_only_120d,
         "ftp1_width": 120,

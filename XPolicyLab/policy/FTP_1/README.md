@@ -10,11 +10,12 @@ Current production recipe is `Spark0_real_bench_v5` + Moxian, trained on the 8-t
 
 - `env_cfg_type: tianji_marvin_wuji`
 - `action_type: ee` only
-- one RGB observation: `cam_head`, resized to 224×224
+- one RGB observation: `cam_head`, resized with `cv2.INTER_AREA` to 224×224 in both training and inference; no RGB/BGR channel swap
 - absolute world-coordinate left/right EE poses `[x,y,z,qw,qx,qy,qz]`
 - left/right Wuji hand joints, 20 dimensions per hand; negative joint values are valid and must not be clamped
 - four Moxian tactile streams: left/right fingertip `(5,4,4)` and palm `(1,15,16)`
 - 120-D FTP container with 58 supervised dimensions: two pose9 rot6D blocks and two 20-D hands
+- every supervised target is re-read from the source HDF5 `action/*` group during dataset validation; the loader never synthesizes an action from `state[t+1]`
 - model horizon 33 with `action_start_index=1`, so `execute_horizon` must be 32
 
 Normalization domain and deploy `domain_name` are both `Spark0_real_bench_v5_Moxian_joint_only`.
@@ -40,7 +41,7 @@ Transfer water from one container to the other using the dropper.
 source /mnt/xspark-data/conda_envs/FTP_1/bin/activate
 ```
 
-The vendored upstream checkout is under `policy/FTP_1/ftp1-policy`. Official pretrained weights live in `pretrain_model/ftp1_pretrain_v0426_50kstep`; `download_pretrained.sh` can refresh that snapshot.
+The vendored upstream checkout is under `policy/FTP_1/ftp1-policy`. Official pretrained weights live in `pretrain_model/ftp1_pretrain_v0426_50kstep`; `download_pretrained.sh` pins Hugging Face `MJJJJ1064/ftp1_v0426_50kstep` at revision `d6e5b73e473d3e70fb5f53132a2b1c35b5031156` and verifies the model SHA256. It can refresh that exact snapshot.
 
 ## Data Processing
 
@@ -73,5 +74,6 @@ bash eval.sh <bench_name> <task_name> <ckpt_name> tianji_marvin_wuji ee 42 \
 ## Known limitations
 
 - Moxian matrix tokenizers are new sensors and are not in the official 50k pretrained snapshot; the backbone still loads, and those two tokenizers start from random initialization unless a later fine-tune checkpoint saved them.
+- In the source bench_v5 files, EE-pose values under `action/*` are numerically equal to the following observed EE pose. They are still read from the independent original action datasets; provenance is checked by source-key and full row comparison, never inferred from value equality.
 - Moxian pressure uses the training convention `max(raw - session_baseline, 0)`.
 - Joint-control evaluation is intentionally rejected.

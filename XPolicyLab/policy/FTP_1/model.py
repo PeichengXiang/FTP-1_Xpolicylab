@@ -420,6 +420,12 @@ class Model(ModelTemplate):
         self.required_cameras = set(model_cfg.get("required_cameras") or ["camera_ego_rgb_0"])
         image_size = model_cfg.get("image_size") or [224, 224]
         self.image_size = (int(image_size[0]), int(image_size[1]))
+        self.input_color_order = str(model_cfg.get("input_color_order", "RGB")).upper()
+        if self.input_color_order != "RGB":
+            raise ValueError(
+                "FTP-1 was trained on RGB images; input_color_order must be 'RGB', "
+                f"got {self.input_color_order!r}"
+            )
         self.action_start_index = int(model_cfg.get("action_start_index", 1))
         if self.action_start_index < 0 or self.action_start_index >= self.action_horizon:
             raise ValueError(

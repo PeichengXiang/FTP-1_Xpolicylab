@@ -22,6 +22,7 @@ FTP1_UPSTREAM_ROOT="${FTP1_UPSTREAM_ROOT:-${POLICY_DIR}/ftp1-policy}"
 FTP1_PYTHON="${FTP1_PYTHON:-${BENCH_ROOT}/.venvs/FTP_1/bin/python}"
 NORM_LAUNCHER="${POLICY_DIR}/run_compute_norm_stats.py"
 DATASET_CONFIG="${FTP1_DATASET_CONFIG:-${POLICY_DIR}/data_scripts/dataset_spark0_real_bench_v5_moxian_joint_only.json}"
+DEPLOY_CONFIG="${FTP1_DEPLOY_CONFIG:-${POLICY_DIR}/deploy.yml}"
 VALIDATION_REPORT="${FTP1_VALIDATION_REPORT:-${BENCH_ROOT}/data/spark0_real_bench_v5_moxian_joint_only/validation_report.json}"
 EXPECTED_SOURCE_ROOT="${FTP1_EXPECTED_SOURCE_ROOT:-/vepfs-cnbje63de6fae220/xiangpc/data/bench_v5}"
 PRETRAIN_ROOT="${FTP1_PRETRAIN_ROOT:-${BENCH_ROOT}/pretrain_model}"
@@ -43,6 +44,7 @@ esac
 FTP1_UPSTREAM_ROOT="$(cd "${FTP1_UPSTREAM_ROOT}" && pwd -P)"
 [[ -f "${NORM_LAUNCHER}" ]] || { echo "[FTP_1][ERROR] normalization launcher missing: ${NORM_LAUNCHER}" >&2; exit 1; }
 [[ -f "${DATASET_CONFIG}" ]] || { echo "[FTP_1][ERROR] dataset config missing: ${DATASET_CONFIG}" >&2; exit 1; }
+[[ -f "${DEPLOY_CONFIG}" ]] || { echo "[FTP_1][ERROR] deploy config missing: ${DEPLOY_CONFIG}" >&2; exit 1; }
 
 repo_id="${FTP1_REPO_ID:-Spark0_real_bench_v5_Moxian_joint_only}"
 ckpt_setting="${bench_name}-${ckpt_name}-${env_cfg_type}-${action_type}-${seed}"
@@ -92,12 +94,10 @@ master_port="${FTP1_MASTER_PORT:-29500}"
 world_size=$((nnodes * num_gpus))
 batch_size=$((local_batch_size * world_size))
 
+official_pretrain_checkpoint="${PRETRAIN_ROOT}/ftp1_pretrain_v0426_50kstep"
 pretrain_checkpoint="${FTP1_PRETRAIN_CHECKPOINT:-}"
-if [[ -z "${pretrain_checkpoint}" && -d "${PRETRAIN_ROOT}" ]]; then
-    pretrain_model_file="$(find "${PRETRAIN_ROOT}" -type f -name model.safetensors -print 2>/dev/null | sort -V | tail -n 1)"
-    if [[ -n "${pretrain_model_file}" ]]; then
-        pretrain_checkpoint="$(dirname "${pretrain_model_file}")"
-    fi
+if [[ -z "${pretrain_checkpoint}" && -f "${official_pretrain_checkpoint}/model.safetensors" ]]; then
+    pretrain_checkpoint="${official_pretrain_checkpoint}"
 fi
 
 if [[ "${stage}" != "norm" && -z "${pretrain_checkpoint}" && "${FTP1_DRY_RUN:-0}" != "1" ]]; then
@@ -226,21 +226,25 @@ if [[ "${FTP1_DRY_RUN:-0}" == "1" ]]; then
     exit 0
 fi
 
-"${FTP1_PYTHON}" - "${VALIDATION_REPORT}" "${DATASET_CONFIG}" "${repo_id}" "${EXPECTED_SOURCE_ROOT}" <<'PY'
+"${FTP1_PYTHON}" - "${VALIDATION_REPORT}" "${DATASET_CONFIG}" "${DEPLOY_CONFIG}" "${repo_id}" "${EXPECTED_SOURCE_ROOT}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
+import yaml
+
 report_path = Path(sys.argv[1])
 dataset_config_path = Path(sys.argv[2])
-expected_repo_id = sys.argv[3]
-expected_source_root = Path(sys.argv[4]).resolve()
+deploy_config_path = Path(sys.argv[3])
+expected_repo_id = sys.argv[4]
+expected_source_root = Path(sys.argv[5]).resolve()
 if not report_path.is_file():
     raise SystemExit(
         f"[FTP_1][ERROR] validated joint-only data is required before norm/train: {report_path}"
     )
 report = json.loads(report_path.read_text(encoding="utf-8"))
 dataset_config = json.loads(dataset_config_path.read_text(encoding="utf-8"))
+deploy_config = yaml.safe_load(deploy_config_path.read_text(encoding="utf-8"))
 enabled_datasets = [
     item
     for item in dataset_config.get("datasets", [])
@@ -295,7 +299,27 @@ if int(report.get("ftp1_width", -1)) != 120:
     raise SystemExit("[FTP_1][ERROR] validation report does not declare FTP-1 width 120")
 if int(report.get("active_action_dimensions_per_step", -1)) != 58:
     raise SystemExit("[FTP_1][ERROR] joint-only action mask must have 58 active dimensions")
+if report.get("action_source_contract") != "direct_hdf5_action_group":
+    raise SystemExit("[FTP_1][ERROR] validation did not prove direct HDF5 action provenance")
+if int(report.get("action_source_verified_episode_count", -1)) != expected:
+    raise SystemExit(
+        "[FTP_1][ERROR] not every episode was checked against its source HDF5 action: "
+        f"{report.get('action_source_verified_episode_count')!r}/{expected}"
+    )
+report_resolution = list(report.get("model_input_resolution") or [])
+deploy_resolution = list(deploy_config.get("image_size") or [])
+if report_resolution != [224, 224] or deploy_resolution != report_resolution:
+    raise SystemExit(
+        "[FTP_1][ERROR] train/inference resolution mismatch: "
+        f"validated_train={report_resolution}, deploy={deploy_resolution}"
+    )
+if report.get("image_color_order") != "RGB" or report.get("image_channel_transform") != "none":
+    raise SystemExit("[FTP_1][ERROR] validated training images are not unchanged RGB")
+if str(deploy_config.get("input_color_order", "")).upper() != "RGB":
+    raise SystemExit("[FTP_1][ERROR] deploy input_color_order must be RGB")
 print(f"[FTP_1] validated joint-only dataset: {valid}/{expected} episodes")
+print("[FTP_1] action provenance: direct HDF5 action/* for every episode")
+print("[FTP_1] train/deploy image contract: 224x224 RGB")
 PY
 
 export CUDA_VISIBLE_DEVICES="${gpu_id}"

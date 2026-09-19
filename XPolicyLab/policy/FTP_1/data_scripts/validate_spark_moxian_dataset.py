@@ -21,6 +21,7 @@ from convert_spark_moxian_dataset import (
     Job,
     PIXEL_EQUIVALENT_CONVERTER_SHA256,
     discover_jobs,
+    validate_episode_actions_against_source,
     validate_episode_zarr,
 )
 
@@ -58,12 +59,18 @@ def _validate(job: Job, joint_only_120d: bool) -> dict[str, Any]:
         raise ValueError("source size fingerprint does not match")
     if int(root.attrs.get("source_mtime_ns", -1)) != job.source_mtime_ns:
         raise ValueError("source mtime fingerprint does not match")
+    action_audit = validate_episode_actions_against_source(
+        output,
+        Path(job.source),
+        expected_joint_only_120d=joint_only_120d,
+    )
     return {
         "relative_source": job.relative_source,
         "output": job.output,
         "task": job.task,
         "episode_id": job.episode_id,
         **result,
+        **action_audit,
     }
 
 
@@ -213,6 +220,13 @@ def main() -> None:
         "joint_only_120d": args.joint_only_120d,
         "ftp1_width": 120,
         "active_action_dimensions_per_step": active_action_dimensions[0] if active_action_dimensions else None,
+        "action_source_contract": "direct_hdf5_action_group",
+        "action_source_verified_episode_count": sum(
+            result.get("action_source_verified") is True for result in valid_results
+        ),
+        "model_input_resolution": [224, 224],
+        "image_color_order": "RGB",
+        "image_channel_transform": "none",
         "total_converted_frames": sum(int(result["frames"]) for result in valid_results),
         "total_converted_hours": sum(float(result["duration_seconds"]) for result in valid_results)
         / 3600.0,
