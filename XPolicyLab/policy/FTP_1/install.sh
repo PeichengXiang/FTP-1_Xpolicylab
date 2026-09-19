@@ -62,8 +62,8 @@ export UV_PROJECT_ENVIRONMENT="${FTP1_ENV_PREFIX}"
     --frozen \
     --inexact
 
-"${UV_BIN}" pip install --python "${FTP1_ENV_PREFIX}/bin/python" -e "${FTP1_UPSTREAM_ROOT}"
-"${UV_BIN}" pip install --python "${FTP1_ENV_PREFIX}/bin/python" -e "${XPOLICYLAB_ROOT}"
+"${UV_BIN}" pip install --python "${FTP1_ENV_PREFIX}/bin/python" --no-deps -e "${FTP1_UPSTREAM_ROOT}"
+"${UV_BIN}" pip install --python "${FTP1_ENV_PREFIX}/bin/python" --no-deps -e "${XPOLICYLAB_ROOT}"
 
 SITE_PACKAGES="$("${FTP1_ENV_PREFIX}/bin/python" - <<'PY'
 import site
