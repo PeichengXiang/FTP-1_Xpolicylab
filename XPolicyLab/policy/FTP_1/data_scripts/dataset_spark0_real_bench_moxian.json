@@ -1,0 +1,12 @@
+{
+  "datasets": [
+    {
+      "name": "Spark0_real_bench_Moxian",
+      "path": "/personal/xiangpc/0814_Xpolicylab_bench/FTP-1/data/spark0_real_bench_moxian",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0,
+  "description": "Curated Spark0 30 Hz row-aligned demonstrations; direct taxel_pressure_3D pressure mapping with one fixed camera extrinsic."
+}

@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-09-09T15:15:19.728821",
+  "root": "FTP_1",
+  "source": "/vepfs-cnbje63de6fae220/wenwei/XPolicyLab/policy/FTP_1",
+  "file_count": 2565,
+  "model_sha256": "9e824a3ae4a5cc46beb61df30c7ba81e740d9ddedd9262f9eeab80dbe8ac5ffb",
+  "hand_absolute_lower_bound": 0.0,
+  "omitted": [
+    "__pycache__",
+    "checkpoints",
+    "data",
+    "ftp1-policy/.git",
+    "ftp1-policy/.pytest_cache",
+    "ftp1-policy/UniVTAC/third_party/TacEx/docker/.env.base",
+    "ftp1-policy/UniVTAC/third_party/TacEx/tools/template/templates/external/docker/.env.base",
+    "ftp1-policy/packages/openpi-client/src/openpi_client/__pycache__",
+    "ftp1-policy/scripts/__pycache__",
+    "ftp1-policy/src/openpi/__pycache__",
+    "ftp1-policy/src/openpi/models/__pycache__",
+    "ftp1-policy/src/openpi/models/utils/__pycache__",
+    "ftp1-policy/src/openpi/models_pytorch/__pycache__",
+    "ftp1-policy/src/openpi/policies/__pycache__",
+    "ftp1-policy/src/openpi/shared/__pycache__",
+    "ftp1-policy/src/openpi/training/__pycache__",
+    "ftp1-policy/src/openpi/training/misc/__pycache__",
+    "tests/__pycache__",
+    "wandb"
+  ],
+  "materialized_symlinks": [
+    {
+      "archive_path": "assets/ftp1/real200_action32_15hz",
+      "materialized": true
+    },
+    {
+      "archive_path": "data_scripts/policy_robot_head_tactile.json",
+      "materialized": true
+    }
+  ],
+  "contents": "FTP_1 adapter and bundled FTP source; no parent XPolicyLab, datasets, checkpoints, environments, run logs or Git history"
+}

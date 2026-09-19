@@ -1,0 +1,12 @@
+{
+  "datasets": [
+    {
+      "name": "UniVTAC",
+      "path": "/path/to/processed_univtac_zarr_dir",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0,
+  "description": "Minimal public UniVTAC example config. Point datasets[0].path to a directory containing one or more parsed UniVTAC .zarr files."
+}

@@ -1,0 +1,12 @@
+{
+  "datasets": [
+    {
+      "name": "Spark0_real_bench_0901_Moxian_joint_only",
+      "path": "/personal/xiangpc/0814_Xpolicylab_bench/FTP-1/data/spark0_real_bench_0901_moxian_joint_only",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0,
+  "description": "bench_0901: curated 30 Hz Spark/Moxian demonstrations in FTP-1's fixed 120-D container; 58 dimensions supervise both EE poses (9-D representation each) and 40 hand joints directly from HDF5 actions. Arm-joint and head-pose slots are zero-masked; tactile inputs are enabled."
+}

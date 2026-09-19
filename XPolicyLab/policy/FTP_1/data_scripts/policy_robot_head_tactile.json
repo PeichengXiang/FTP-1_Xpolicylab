@@ -1,0 +1,11 @@
+{
+  "datasets": [
+    {
+      "name": "real200_action32_15hz",
+      "path": "/vepfs-cnbje63de6fae220/wenwei/XPolicyLab/policy/FTP_1/data/real200_action32_15hz",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0
+}

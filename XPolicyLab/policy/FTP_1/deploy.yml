@@ -1,0 +1,120 @@
+policy_name: FTP_1
+protocol: ws
+host: localhost
+port: null
+bench_name: null
+task_name: null
+ckpt_name: null
+env_cfg_type: tianji_marvin_wuji
+seed: null
+action_type: ee
+gpu_id: null
+eval_batch: false
+checkpoint_path: null
+domain_name: Spark0_real_bench_v5_Moxian_joint_only
+tactile_input_config_file: null
+device: cuda
+openpi_data_home: /vepfs-cnbje63de6fae220/xiangpc/0814_Xpolicylab_bench/FTP-1/XPolicyLab/policy/FTP_1/assets/openpi
+num_inference_steps: 10
+skip_normalization: false
+action_start_index: 1
+execute_horizon: 32
+test_action_horizon: 33
+image_size:
+- 224
+- 224
+camera_map:
+  camera_ego_rgb_0:
+  - cam_head
+required_cameras:
+- camera_ego_rgb_0
+left_hand_joint_indices:
+- 7
+- 12
+- 22
+- 17
+- 1
+- 6
+- 11
+- 21
+- 16
+- 26
+- 8
+- 13
+- 23
+- 18
+- 2
+- 9
+- 14
+- 24
+- 19
+- 3
+right_hand_joint_indices:
+- 7
+- 12
+- 22
+- 17
+- 1
+- 6
+- 11
+- 21
+- 16
+- 26
+- 8
+- 13
+- 23
+- 18
+- 2
+- 9
+- 14
+- 24
+- 19
+- 3
+tactile_map:
+  right_tactile_fingertip: right_tactile_fingertip
+  right_tactile_palm: right_tactile_palm
+  left_tactile_fingertip: left_tactile_fingertip
+  left_tactile_palm: left_tactile_palm
+tactile_function_areas:
+  right_tactile_fingertip:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  right_tactile_palm:
+  - 5
+  left_tactile_fingertip:
+  - 24
+  - 25
+  - 26
+  - 27
+  - 28
+  left_tactile_palm:
+  - 29
+tactile_sensors:
+  right_tactile_fingertip: MoxianTactileGlove460
+  right_tactile_palm: MoxianTactileGlove460
+  left_tactile_fingertip: MoxianTactileGlove460
+  left_tactile_palm: MoxianTactileGlove460
+tactile_has_time_dim: false
+single_area_tactile_keys: []
+require_tactile: auto
+proprioception_pose_rep: absolute
+proprioception_joint_rep: absolute
+action_pose_rep: absolute
+action_joint_rep: absolute
+use_action_mask: true
+joint_only_state_action: true
+request_timeout_s: 600
+max_connect_attempts: 120
+connect_retry_delay_s: 2
+training_instructions:
+- Build a tower with the blocks.
+- Wipe the blackboard clean.
+- Insert the test tubes into the rack.
+- Pack the shoes into the box.
+- Place the phone in the designated location.
+- Stack the bowls on top of one another.
+- Stand the bottle upright.
+- Transfer water from one container to the other using the dropper.

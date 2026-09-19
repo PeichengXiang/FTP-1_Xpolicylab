@@ -1,0 +1,12 @@
+{
+  "datasets": [
+    {
+      "name": "DexTouchWM_0910_gen_robot_Moxian_joint_only",
+      "path": "/personal/xiangpc/0814_Xpolicylab_bench/FTP-1/data/dextouch_wm_0910_gen_robot_moxian_joint_only",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0,
+  "description": "DexTouch-WM 0910 gen_robot: 8-task 15 Hz row-aligned Spark/Moxian demonstrations. 58 dimensions supervise EE poses and 40 hand joints from independent HDF5 action/*, never next state."
+}

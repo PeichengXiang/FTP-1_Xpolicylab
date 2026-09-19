@@ -1,0 +1,12 @@
+{
+  "datasets": [
+    {
+      "name": "Spark0_real_bench_v5_Moxian_joint_only",
+      "path": "/vepfs-cnbje63de6fae220/xiangpc/0814_Xpolicylab_bench/FTP-1/data/spark0_real_bench_v5_moxian_joint_only",
+      "use_trajectory_ratio": 1.0,
+      "enabled": true
+    }
+  ],
+  "default_use_trajectory_ratio": 1.0,
+  "description": "bench_v5: 8-task 30 Hz Spark/Moxian demonstrations in FTP-1's fixed 120-D container; 58 dimensions supervise both EE poses (9-D representation each) and 40 hand joints directly from HDF5 actions. Arm-joint and head-pose slots are zero-masked; tactile inputs are enabled. Default training uses the head camera only (camera_ego_rgb); wrist RGB remains in the Zarr for optional multi-view."
+}
