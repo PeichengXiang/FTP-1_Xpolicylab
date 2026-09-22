@@ -533,6 +533,12 @@ def train_loop(config: _config.TrainConfig):
             static_graph=False,  # Disable since we need Heterogeneous Batching
         )
 
+    # Dataset/model construction may consume or alter RNG state.  Re-establish
+    # the global-rank-specific stream immediately before compile warmup/training
+    # so diffusion noise and timesteps cannot become synchronized across nodes.
+    set_seed(config.seed, rank)
+    logging.info("Restored training RNG stream with seed=%d for global rank=%d", config.seed + rank, rank)
+
     # torch.compile optimization (PyTorch 2.0+)
     # IMPORTANT:
     # 1. torch.compile must happen AFTER loading weights, otherwise checkpoint keys won't match.

@@ -8,15 +8,24 @@ to the config assets directory.
 import json
 import os
 import pathlib
+import random
 import shutil
 
 import numpy as np
+import torch
 
 import openpi.training.config as _config
 import openpi.training.data_loader as _data_loader
 
 
 def main(config: _config.TrainConfig):
+    # Normalization uses shuffled DataLoaders and NumPy subsampling.  Seed all
+    # participating RNGs here so removing dataset-constructor side effects does
+    # not make repeated normalization runs drift.
+    random.seed(config.seed)
+    np.random.seed(config.seed)
+    torch.manual_seed(config.seed)
+
     data_config = config.data.create(config.assets_dirs, config.model)
     action_horizon = config.model.action_horizon
     batch_size = config.norm_batch_size

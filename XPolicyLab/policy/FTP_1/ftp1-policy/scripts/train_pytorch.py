@@ -28,6 +28,7 @@ import gc
 import logging
 import os
 import platform
+import random
 import shutil
 import time
 
@@ -125,6 +126,7 @@ def cleanup_ddp():
 def set_seed(seed: int, local_rank: int):
     torch.manual_seed(seed + local_rank)
     np.random.seed(seed + local_rank)
+    random.seed(seed + local_rank)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed + local_rank)
 

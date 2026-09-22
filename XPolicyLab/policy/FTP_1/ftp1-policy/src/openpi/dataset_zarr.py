@@ -59,7 +59,7 @@ from openpi.tactile_identity import canonicalize_tactile_sensor_name
 register_codecs()
 
 FTP1_GRIPPER_HAND_SLOT_INDEX = 28
-SPLIT_STRATEGY_VERSION = 4
+SPLIT_STRATEGY_VERSION = 5
 
 
 def _canonicalize_action_joint_rep(rep: str | None) -> str | None:
@@ -708,11 +708,10 @@ def get_replay_buffer(dataset_path, cache_dir):
 
 
 def get_replay_buffer_list(dataset_path, cache_dir):
-    dataset_path_list_tmp = os.listdir(dataset_path)
-    dataset_path_list = []
-    for data_p in dataset_path_list_tmp:
-        if data_p.endswith(".zarr"):
-            dataset_path_list.append(data_p)
+    # Directory iteration order is not stable on distributed filesystems (for
+    # example JuiceFS).  Episode indices and train/val splits are positional, so
+    # every process must build this list in exactly the same order.
+    dataset_path_list = sorted(data_p for data_p in os.listdir(dataset_path) if data_p.endswith(".zarr"))
     replay_buffer_list = []
     for data_p in dataset_path_list:
         # print(data_p)
@@ -1106,7 +1105,7 @@ class ZarrDataset(Dataset):
             existing[val_key] = val_episode_idx
 
         existing["_split_strategy_version"] = SPLIT_STRATEGY_VERSION
-        existing["_split_strategy"] = "norm_stats_domain_name_unique_source_episode"
+        existing["_split_strategy"] = "norm_stats_domain_name_unique_source_episode_sorted_zarr_files"
 
         with open(split_file_path, "w") as f:
             json.dump(existing, f)
@@ -2398,11 +2397,10 @@ class MultiZarrDataset(Dataset):
         os.makedirs(self.assets_dir, exist_ok=True)
 
         self.seed = data_config.seed
-        np.random.seed(self.seed)
-        random.seed(self.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(self.seed)
-            torch.cuda.manual_seed_all(self.seed)
+        # Do not mutate process-global RNG state here.  In DDP, each rank is
+        # seeded independently by the training entrypoint; resetting all ranks
+        # to data_config.seed would synchronize diffusion noise, timesteps, and
+        # augmentation RNG streams.  DataLoader workers receive their own seeds.
 
         # Load dataset configuration from JSON file
         if not hasattr(data_config, "dataset_config_path") or not data_config.dataset_config_path:

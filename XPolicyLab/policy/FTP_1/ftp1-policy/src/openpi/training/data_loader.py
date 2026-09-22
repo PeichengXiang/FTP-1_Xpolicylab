@@ -361,6 +361,7 @@ def _create_torch_data_loader(train_dataset: Dataset,
                     num_replicas=world_size,
                     rank=rank,
                     shuffle=shuffle,
+                    seed=seed,
                     drop_last=True,
                 )
         local_batch_size = batch_size // world_size
@@ -386,6 +387,9 @@ def _create_torch_data_loader(train_dataset: Dataset,
         )
 
     logging.info(f"local_batch_size: {local_batch_size}")
+    # Keep sampler ordering common across ranks, but give each rank a distinct
+    # worker RNG stream for stochastic data augmentation.
+    loader_seed = seed + rank if framework == "pytorch" else seed
     train_data_loader = TorchDataLoader(
         train_dataset,
         local_batch_size=local_batch_size,
@@ -395,7 +399,7 @@ def _create_torch_data_loader(train_dataset: Dataset,
         batch_sampler=batch_sampler,
         num_batches=num_batches,
         num_workers=num_workers,
-        seed=seed,
+        seed=loader_seed,
         framework=framework,
     )
 
@@ -589,12 +593,15 @@ class TorchDataLoader:
             loader_kwargs["drop_last"] = True
 
         self._data_loader = torch.utils.data.DataLoader(**loader_kwargs)
+        self._sampler = sampler
         self._batch_sampler = batch_sampler
         self._epoch = 0
 
     def set_epoch(self, epoch: int) -> None:
-        """Set the epoch for the batch sampler (if it supports it)."""
+        """Set the epoch for each configured sampler that supports it."""
         self._epoch = epoch
+        if self._sampler is not None and hasattr(self._sampler, "set_epoch"):
+            self._sampler.set_epoch(epoch)
         if self._batch_sampler is not None and hasattr(self._batch_sampler, 'set_epoch'):
             self._batch_sampler.set_epoch(epoch)
 
@@ -606,6 +613,8 @@ class TorchDataLoader:
         num_items = 0
         while True:
             # Set epoch before creating new iterator to ensure all workers use the same epoch
+            if self._sampler is not None and hasattr(self._sampler, "set_epoch"):
+                self._sampler.set_epoch(self._epoch)
             if self._batch_sampler is not None and hasattr(self._batch_sampler, 'set_epoch'):
                 self._batch_sampler.set_epoch(self._epoch)
             
