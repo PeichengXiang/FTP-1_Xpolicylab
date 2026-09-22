@@ -63,7 +63,8 @@ norm_num_workers="${FTP1_NORM_NUM_WORKERS:-16}"
 norm_batch_size="${FTP1_NORM_BATCH_SIZE:-32}"
 norm_sample_ratio="${FTP1_NORM_SAMPLE_RATIO:-1.0}"
 action_down_sample_steps="${FTP1_ACTION_DOWN_SAMPLE_STEPS:-1}"
-used_image_keys="${FTP1_USED_IMAGE_KEYS:-camera_ego_rgb}"
+expected_used_image_keys="camera_ego_rgb,right_wrist_camera_rgb,left_wrist_camera_rgb"
+used_image_keys="${FTP1_USED_IMAGE_KEYS:-${expected_used_image_keys}}"
 action_horizon="${FTP1_ACTION_HORIZON:-33}"
 wandb_enabled="${FTP1_WANDB_ENABLED:-1}"
 wandb_project="${FTP1_WANDB_PROJECT:-xpolicylab-0910-real}"
@@ -93,6 +94,16 @@ master_port="${FTP1_MASTER_PORT:-29500}"
 }
 world_size=$((nnodes * num_gpus))
 batch_size=$((local_batch_size * world_size))
+if [[ "${used_image_keys}" != "${expected_used_image_keys}" ]]; then
+    echo "[FTP_1][ERROR] this production recipe requires exactly three ordered RGB views:" >&2
+    echo "[FTP_1][ERROR] ${expected_used_image_keys}" >&2
+    echo "[FTP_1][ERROR] got: ${used_image_keys}" >&2
+    exit 1
+fi
+if (( batch_size % world_size != 0 )); then
+    echo "[FTP_1][ERROR] global batch ${batch_size} is not divisible by world size ${world_size}" >&2
+    exit 1
+fi
 
 official_pretrain_checkpoint="${PRETRAIN_ROOT}/ftp1_pretrain_v0426_50kstep"
 pretrain_checkpoint="${FTP1_PRETRAIN_CHECKPOINT:-}"
@@ -202,7 +213,7 @@ print_command() {
 
 echo "[FTP_1] stage=${stage}, dataset=${DATASET_CONFIG}"
 echo "[FTP_1] state/action contract=120D container, EE pose + 40 hand-joint dimensions (arm/head slots omitted), direct HDF5 actions, tactile enabled"
-echo "[FTP_1] used_image_keys=${used_image_keys} (camera_ego_rgb=single-view head; all=every present camera)"
+echo "[FTP_1] used_image_keys=${used_image_keys} (required ordered views: head, right wrist, left wrist)"
 echo "[FTP_1] action_horizon=${action_horizon} (deploy execute_horizon=32 after action_start_index=1)"
 echo "[FTP_1] pretrained_root=${PRETRAIN_ROOT}"
 echo "[FTP_1] pretrained_checkpoint=${pretrain_checkpoint:-NOT_FOUND}"
@@ -226,7 +237,7 @@ if [[ "${FTP1_DRY_RUN:-0}" == "1" ]]; then
     exit 0
 fi
 
-"${FTP1_PYTHON}" - "${VALIDATION_REPORT}" "${DATASET_CONFIG}" "${DEPLOY_CONFIG}" "${repo_id}" "${EXPECTED_SOURCE_ROOT}" <<'PY'
+"${FTP1_PYTHON}" - "${VALIDATION_REPORT}" "${DATASET_CONFIG}" "${DEPLOY_CONFIG}" "${repo_id}" "${EXPECTED_SOURCE_ROOT}" "${used_image_keys}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -238,6 +249,17 @@ dataset_config_path = Path(sys.argv[2])
 deploy_config_path = Path(sys.argv[3])
 expected_repo_id = sys.argv[4]
 expected_source_root = Path(sys.argv[5]).resolve()
+used_image_keys = [part.strip() for part in sys.argv[6].split(",") if part.strip()]
+expected_image_keys = [
+    "camera_ego_rgb",
+    "right_wrist_camera_rgb",
+    "left_wrist_camera_rgb",
+]
+if used_image_keys != expected_image_keys:
+    raise SystemExit(
+        "[FTP_1][ERROR] training cameras must be the exact ordered three-view contract: "
+        f"{expected_image_keys}; got {used_image_keys}"
+    )
 if not report_path.is_file():
     raise SystemExit(
         f"[FTP_1][ERROR] validated joint-only data is required before norm/train: {report_path}"
@@ -317,9 +339,27 @@ if report.get("image_color_order") != "RGB" or report.get("image_channel_transfo
     raise SystemExit("[FTP_1][ERROR] validated training images are not unchanged RGB")
 if str(deploy_config.get("input_color_order", "")).upper() != "RGB":
     raise SystemExit("[FTP_1][ERROR] deploy input_color_order must be RGB")
+expected_model_image_keys = [f"{key}_0" for key in expected_image_keys]
+camera_map = deploy_config.get("camera_map") or {}
+required_cameras = list(deploy_config.get("required_cameras") or [])
+expected_camera_map = {
+    "camera_ego_rgb_0": ["cam_head"],
+    "right_wrist_camera_rgb_0": ["cam_right_wrist"],
+    "left_wrist_camera_rgb_0": ["cam_left_wrist"],
+}
+if camera_map != expected_camera_map:
+    raise SystemExit(
+        "[FTP_1][ERROR] deploy camera_map keys/order/source provenance do not match training: "
+        f"expected={expected_camera_map}, got={camera_map}"
+    )
+if required_cameras != expected_model_image_keys:
+    raise SystemExit(
+        "[FTP_1][ERROR] deploy required_cameras do not match training: "
+        f"expected={expected_model_image_keys}, got={required_cameras}"
+    )
 print(f"[FTP_1] validated joint-only dataset: {valid}/{expected} episodes")
 print("[FTP_1] action provenance: direct HDF5 action/* for every episode")
-print("[FTP_1] train/deploy image contract: 224x224 RGB")
+print("[FTP_1] train/deploy image contract: ordered head + right wrist + left wrist, 224x224 RGB")
 PY
 
 export CUDA_VISIBLE_DEVICES="${gpu_id}"

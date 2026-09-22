@@ -19,6 +19,11 @@ _FTP1_ARM_JOINT_DIM = 7
 _FTP1_HAND_JOINT_DIM = 32
 _FTP1_GRIPPER_SLOT = 28
 _SUPPORTED_ENV_CFG_TYPE = "tianji_marvin_wuji"
+_FTP1_RUNTIME_CAMERA_MAP = {
+    "camera_ego_rgb_0": ("cam_head",),
+    "right_wrist_camera_rgb_0": ("cam_right_wrist",),
+    "left_wrist_camera_rgb_0": ("cam_left_wrist",),
+}
 
 _SIDE_SLICES = {
     "right": {"pose": (0, 9), "arm": (9, 16), "hand": (16, 48)},
@@ -107,6 +112,61 @@ def _first_config_value(data: Any, key: str) -> Any:
             if found is not None:
                 return found
     return None
+
+
+def _checkpoint_image_keys(train_config: dict[str, Any]) -> tuple[str, ...] | None:
+    """Return the ordered FTP-1 image keys recorded by an explicit train config."""
+    value = train_config.get("used_image_keys")
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"all", "*"}:
+            return None
+        base_keys = tuple(part.strip() for part in text.split(",") if part.strip())
+    elif isinstance(value, (list, tuple)):
+        base_keys = tuple(str(part).strip() for part in value if str(part).strip())
+    else:
+        raise TypeError(
+            "checkpoint train_config.used_image_keys must be a comma-separated string or list, "
+            f"got {type(value).__name__}"
+        )
+    if not base_keys:
+        return None
+
+    down_sample_steps = train_config.get("image_down_sample_steps") or []
+    if not isinstance(down_sample_steps, (list, tuple)):
+        raise TypeError("checkpoint train_config.image_down_sample_steps must be a list")
+    history_length = len(down_sample_steps) + 1
+    return tuple(f"{key}_{history_index}" for history_index in range(history_length) for key in base_keys)
+
+
+def _validate_camera_contract(
+    camera_map: dict[str, Any], required_cameras: set[str], train_config: dict[str, Any]
+) -> None:
+    """Fail closed on optional views or train-to-inference image-key drift."""
+    runtime_keys = tuple(str(key) for key in camera_map)
+    normalized_camera_map = {
+        str(key): tuple(value) if isinstance(value, (list, tuple)) else (str(value),)
+        for key, value in camera_map.items()
+    }
+    if normalized_camera_map != _FTP1_RUNTIME_CAMERA_MAP:
+        raise ValueError(
+            "FTP-1 camera_map must preserve the trained head/right-wrist/left-wrist provenance: "
+            f"expected={_FTP1_RUNTIME_CAMERA_MAP}, got={normalized_camera_map}"
+        )
+    if required_cameras != set(runtime_keys):
+        raise ValueError(
+            "FTP-1 requires every configured camera: "
+            f"camera_map={list(runtime_keys)}, required_cameras={sorted(required_cameras)}"
+        )
+
+    checkpoint_keys = _checkpoint_image_keys(train_config)
+    if checkpoint_keys is not None and runtime_keys != checkpoint_keys:
+        raise ValueError(
+            "FTP-1 camera_map keys/order must exactly match checkpoint train_config.used_image_keys: "
+            f"checkpoint={list(checkpoint_keys)}, runtime={list(runtime_keys)}"
+        )
 
 
 def _canonical_rep(value: Any, default: str) -> str:
@@ -414,10 +474,9 @@ class Model(ModelTemplate):
             model_cfg.get("training_instructions") or _FTP1_WORLD_EE_TRAINING_INSTRUCTIONS
         )
 
-        self.camera_map = model_cfg.get("camera_map") or {
-            "camera_ego_rgb_0": ["cam_head", "cam_third_view"],
-        }
-        self.required_cameras = set(model_cfg.get("required_cameras") or ["camera_ego_rgb_0"])
+        self.camera_map = dict(model_cfg.get("camera_map") or _FTP1_RUNTIME_CAMERA_MAP)
+        self.required_cameras = set(model_cfg.get("required_cameras") or self.camera_map)
+        _validate_camera_contract(self.camera_map, self.required_cameras, train_config)
         image_size = model_cfg.get("image_size") or [224, 224]
         self.image_size = (int(image_size[0]), int(image_size[1]))
         self.input_color_order = str(model_cfg.get("input_color_order", "RGB")).upper()

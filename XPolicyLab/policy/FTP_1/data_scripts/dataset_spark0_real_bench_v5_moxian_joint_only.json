@@ -8,5 +8,5 @@
     }
   ],
   "default_use_trajectory_ratio": 1.0,
-  "description": "bench_v5: 8-task 30 Hz Spark/Moxian demonstrations in FTP-1's fixed 120-D container; 58 dimensions supervise both EE poses (9-D representation each) and 40 hand joints directly from HDF5 actions. Arm-joint and head-pose slots are zero-masked; tactile inputs are enabled. Default training uses the head camera only (camera_ego_rgb); wrist RGB remains in the Zarr for optional multi-view."
+  "description": "bench_v5: 8-task 30 Hz Spark/Moxian demonstrations in FTP-1's fixed 120-D container; 58 dimensions supervise both EE poses (9-D representation each) and 40 hand joints directly from HDF5 actions. Arm-joint and head-pose slots are zero-masked; tactile inputs are enabled. Production training requires three ordered RGB views: camera_ego_rgb, right_wrist_camera_rgb, left_wrist_camera_rgb."
 }

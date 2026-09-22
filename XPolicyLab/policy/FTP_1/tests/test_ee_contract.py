@@ -12,7 +12,14 @@ POLICY_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(POLICY_DIR))
 os.environ["FTP1_TEST_MODE"] = "1"
 
-from model import Model, _SIDE_SLICES, _matrix_to_pose9, _pose7_to_matrix  # noqa: E402
+from model import (  # noqa: E402
+    Model,
+    _FTP1_RUNTIME_CAMERA_MAP,
+    _SIDE_SLICES,
+    _matrix_to_pose9,
+    _pose7_to_matrix,
+    _validate_camera_contract,
+)
 
 
 HAND_INDICES = [
@@ -33,17 +40,24 @@ def _make_model(**overrides) -> Model:
         "proprioception_joint_rep": "absolute",
         "action_pose_rep": "absolute",
         "action_joint_rep": "relative",
-        "camera_map": {"camera_ego_rgb_0": ["cam_head"]},
-        "required_cameras": ["camera_ego_rgb_0"],
     }
     config.update(overrides)
     return Model(config)
 
 
 def _observation() -> dict:
+    def solid_rgb(rgb: tuple[int, int, int]) -> np.ndarray:
+        image = np.empty((480, 640, 3), dtype=np.uint8)
+        image[...] = rgb
+        return image
+
     return {
         "instruction": "Build a tower with the blocks.",
-        "vision": {"cam_head": np.zeros((224, 224, 3), dtype=np.uint8)},
+        "vision": {
+            "cam_head": {"color": solid_rgb((255, 0, 0))},
+            "cam_right_wrist": {"color": solid_rgb((0, 255, 0))},
+            "cam_left_wrist": {"color": solid_rgb((0, 0, 255))},
+        },
         "state": {
             "left_ee_pose": np.array([0.3, 0.2, 0.5, 1.0, 0.0, 0.0, 0.0], dtype=np.float32),
             "right_ee_pose": np.array([0.3, -0.2, 0.5, 1.0, 0.0, 0.0, 0.0], dtype=np.float32),
@@ -71,7 +85,20 @@ def test_world_ee_state_mask_and_action_decode() -> None:
         assert np.count_nonzero(action_mask[slice(*slices["hand"])]) == 20
 
     encoded = model._encode_observation(observation)
-    assert set(encoded["images"]) == {"camera_ego_rgb_0"}
+    assert list(encoded["images"]) == [
+        "camera_ego_rgb_0",
+        "right_wrist_camera_rgb_0",
+        "left_wrist_camera_rgb_0",
+    ]
+    expected_rgb = {
+        "camera_ego_rgb_0": (255, 0, 0),
+        "right_wrist_camera_rgb_0": (0, 255, 0),
+        "left_wrist_camera_rgb_0": (0, 0, 255),
+    }
+    for key, image in encoded["images"].items():
+        assert image.shape == (224, 224, 3)
+        assert image.dtype == np.uint8
+        assert tuple(int(value) for value in image[0, 0]) == expected_rgb[key]
     assert encoded["prompt"] == "Build a tower with the blocks."
 
     left_target = np.array([0.4, 0.25, 0.55, 0.9238795, 0.0, 0.3826834, 0.0], dtype=np.float32)
@@ -102,6 +129,68 @@ def test_world_ee_state_mask_and_action_decode() -> None:
 def test_execute_horizon_rejects_full_chunk_after_start_index() -> None:
     with pytest.raises(ValueError, match="execute_horizon must be in"):
         _make_model(execute_horizon=33)
+
+
+@pytest.mark.parametrize(
+    ("runtime_key", "ftp_key"),
+    [
+        ("cam_head", "camera_ego_rgb_0"),
+        ("cam_right_wrist", "right_wrist_camera_rgb_0"),
+        ("cam_left_wrist", "left_wrist_camera_rgb_0"),
+    ],
+)
+def test_each_of_three_runtime_cameras_is_required(runtime_key: str, ftp_key: str) -> None:
+    model = _make_model()
+    observation = _observation()
+    del observation["vision"][runtime_key]
+    with pytest.raises(KeyError, match=ftp_key):
+        model._encode_observation(observation)
+
+
+def test_non_rgb_input_contract_is_rejected() -> None:
+    with pytest.raises(ValueError, match="input_color_order must be 'RGB'"):
+        _make_model(input_color_order="BGR")
+
+
+def test_checkpoint_image_keys_and_order_must_match_runtime() -> None:
+    required = set(_FTP1_RUNTIME_CAMERA_MAP)
+    matching_train_config = {
+        "used_image_keys": "camera_ego_rgb,right_wrist_camera_rgb,left_wrist_camera_rgb",
+        "image_down_sample_steps": [],
+    }
+    _validate_camera_contract(_FTP1_RUNTIME_CAMERA_MAP, required, matching_train_config)
+
+    with pytest.raises(ValueError, match="keys/order must exactly match"):
+        _validate_camera_contract(
+            _FTP1_RUNTIME_CAMERA_MAP,
+            required,
+            {
+                "used_image_keys": "camera_ego_rgb,left_wrist_camera_rgb,right_wrist_camera_rgb",
+                "image_down_sample_steps": [],
+            },
+        )
+    with pytest.raises(ValueError, match="keys/order must exactly match"):
+        _validate_camera_contract(
+            _FTP1_RUNTIME_CAMERA_MAP,
+            required,
+            {"used_image_keys": "camera_ego_rgb", "image_down_sample_steps": []},
+        )
+
+
+def test_every_configured_camera_must_be_required() -> None:
+    with pytest.raises(ValueError, match="requires every configured camera"):
+        _validate_camera_contract(
+            _FTP1_RUNTIME_CAMERA_MAP,
+            {"camera_ego_rgb_0"},
+            {},
+        )
+
+
+def test_runtime_camera_sources_cannot_be_swapped() -> None:
+    swapped = dict(_FTP1_RUNTIME_CAMERA_MAP)
+    swapped["right_wrist_camera_rgb_0"] = ("cam_left_wrist",)
+    with pytest.raises(ValueError, match="must preserve the trained"):
+        _validate_camera_contract(swapped, set(swapped), {})
 
 
 def test_instruction_aliases_map_to_training_strings() -> None:

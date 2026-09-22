@@ -27,8 +27,14 @@ input_color_order: RGB
 camera_map:
   camera_ego_rgb_0:
   - cam_head
+  right_wrist_camera_rgb_0:
+  - cam_right_wrist
+  left_wrist_camera_rgb_0:
+  - cam_left_wrist
 required_cameras:
 - camera_ego_rgb_0
+- right_wrist_camera_rgb_0
+- left_wrist_camera_rgb_0
 left_hand_joint_indices:
 - 7
 - 12

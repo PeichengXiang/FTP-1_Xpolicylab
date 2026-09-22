@@ -10,7 +10,7 @@ Current production recipe is `Spark0_real_bench_v5` + Moxian, trained on the 8-t
 
 - `env_cfg_type: tianji_marvin_wuji`
 - `action_type: ee` only
-- one RGB observation: `cam_head`, resized with `cv2.INTER_AREA` to 224×224 in both training and inference; no RGB/BGR channel swap
+- three ordered RGB observations: `cam_head`, `cam_right_wrist`, and `cam_left_wrist`, each resized with `cv2.INTER_AREA` to 224×224 in both training and inference; no RGB/BGR channel swap
 - absolute world-coordinate left/right EE poses `[x,y,z,qw,qx,qy,qz]`
 - left/right Wuji hand joints, 20 dimensions per hand; negative joint values are valid and must not be clamped
 - four Moxian tactile streams: left/right fingertip `(5,4,4)` and palm `(1,15,16)`
@@ -60,7 +60,9 @@ bash XPolicyLab/policy/FTP_1/train.sh \
   Spark0_real_bench_v5 Moxian tianji_marvin_wuji ee 42 0,1,2,3,4,5,6,7
 ```
 
-Defaults are 200000 steps, `val_interval=10000`, `save_interval=10000`, batch 8 per GPU. Override with `FTP1_NUM_TRAIN_STEPS`, `FTP1_VAL_INTERVAL`, and `FTP1_SAVE_INTERVAL`.
+Defaults are 200000 steps, `val_interval=10000`, `save_interval=10000`, and batch 8 per GPU. The production recipe rejects any camera selection other than the explicit ordered triple `camera_ego_rgb,right_wrist_camera_rgb,left_wrist_camera_rgb`. Override the per-GPU batch with `FTP1_LOCAL_BATCH_SIZE` (for example, use 4 on 16 GPUs to keep global batch 64), and override steps/intervals with `FTP1_NUM_TRAIN_STEPS`, `FTP1_VAL_INTERVAL`, and `FTP1_SAVE_INTERVAL`.
+
+For two 8-GPU nodes, run the same command on both nodes with `FTP1_NNODES=2`, the same `FTP1_MASTER_ADDR` / `FTP1_MASTER_PORT` / `FTP1_EXP_NAME`, and `FTP1_NODE_RANK=0` or `1`. Set `FTP1_LOCAL_BATCH_SIZE=4` for global batch 64. The trainer uses the global rank for RNG seeding, while only global rank 0 initializes W&B and writes checkpoints.
 
 ## Evaluation
 

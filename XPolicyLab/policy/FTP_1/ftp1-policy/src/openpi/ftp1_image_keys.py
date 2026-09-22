@@ -11,6 +11,11 @@ DEFAULT_FTP1_IMAGE_KEYS: tuple[str, ...] = (
     "left_wrist_camera_rgb",
 )
 HEAD_ONLY_IMAGE_KEYS: tuple[str, ...] = ("camera_ego_rgb",)
+SPARK_MOXIAN_THREE_VIEW_IMAGE_KEYS: tuple[str, ...] = (
+    "camera_ego_rgb",
+    "right_wrist_camera_rgb",
+    "left_wrist_camera_rgb",
+)
 
 
 def parse_used_image_keys(value: str | Sequence[str] | None) -> tuple[str, ...] | None:

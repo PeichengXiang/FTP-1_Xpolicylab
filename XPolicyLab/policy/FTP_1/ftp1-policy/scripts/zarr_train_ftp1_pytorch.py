@@ -267,13 +267,20 @@ def train_loop(config: _config.TrainConfig):
     if config.use_torch_compile:
         compile_cache_dirs = _configure_rank_local_compile_cache(rank=rank, local_rank=local_rank)
 
-    set_seed(config.seed, local_rank)
+    # Use the global rank so different nodes do not reuse identical diffusion
+    # noise, timestep, and augmentation RNG streams for the same local rank.
+    set_seed(config.seed, rank)
     logging.info(f"Running on: {platform.node()} | rank={rank}/{world_size} | local_rank={local_rank}")
     if compile_cache_dirs is not None:
         logging.info("Rank-local compile cache dirs: TORCH_COMPILE_DIR=%s, TRITON_CACHE_DIR=%s, TORCHINDUCTOR_CACHE_DIR=%s", compile_cache_dirs["TORCH_COMPILE_DIR"], compile_cache_dirs["TRITON_CACHE_DIR"], compile_cache_dirs["TORCHINDUCTOR_CACHE_DIR"])
     # Build data loader using the unified data loader
     # Calculate effective batch size per GPU for DDP
     # For N GPUs, each GPU should get batch_size/N samples, so total across all GPUs is batch_size
+    if config.batch_size % world_size != 0:
+        raise ValueError(
+            f"Global batch size {config.batch_size} must be divisible by world size {world_size}; "
+            "otherwise DDP would silently drop samples from every optimizer step."
+        )
     effective_batch_size = config.batch_size // world_size
     logging.info(
         f"Using batch size per GPU: {effective_batch_size} (total batch size across {world_size} GPUs: {config.batch_size})"
